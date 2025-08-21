@@ -15,13 +15,29 @@ mod escala;
 mod escala_handlers;
 mod escala_pdf;
 mod escala_admin_handlers; 
+mod cautela;
+mod cautela_handlers;
 
 use axum::{
     routing::{get, post},
     Router,
 };
 use std::{collections::HashSet, net::SocketAddr, sync::{Arc, Mutex}};
+use tokio::fs; // Adicionado
 use tower_cookies::CookieManagerLayer;
+
+// --- NOVO: Função para garantir que o ficheiro da mensagem existe ---
+async fn ensure_dashboard_message_file() {
+    const MESSAGE_FILE: &str = "data/dashboard_message.json";
+    if fs::try_exists(MESSAGE_FILE).await.unwrap_or(false) {
+        return;
+    }
+    // Cria um ficheiro com um objeto JSON nulo se não existir
+    if let Err(e) = fs::write(MESSAGE_FILE, "null").await {
+        eprintln!("🔥 Falha ao criar {}: {}", MESSAGE_FILE, e);
+    }
+}
+
 
 #[tokio::main]
 async fn main() {
@@ -32,6 +48,8 @@ async fn main() {
     presence::ensure_presence_file().await;
     meals::ensure_meals_structure().await;
     escala::ensure_escala_structure().await;
+    ensure_dashboard_message_file().await;
+    cautela::ensure_paioldelivros_structure().await;
 
     let users_map = users::load_users().await.unwrap();
     
@@ -53,6 +71,9 @@ async fn main() {
         .route("/admin", get(admin_handlers::admin_page_handler))
         .route("/admin/change-password", post(admin_handlers::change_password_handler))
         .route("/admin/create-user", post(admin_handlers::create_user_handler))
+
+        // --- NOVO: Rota para atualizar a mensagem ---
+        .route("/dashboard/update_message", post(handlers::update_dashboard_message_handler))
         
         // Rotas de Presença
         .route("/presence", get(presence_handlers::presence_page))
@@ -94,12 +115,34 @@ async fn main() {
         .route("/admin/escala/pdf", get(escala_admin_handlers::gerar_pdf_escala_handler))
         .route("/admin/escala/troca_obrigatoria", post(escala_admin_handlers::troca_obrigatoria_handler))
 
+
+ // --- Rotas do Módulo de Cautela (do cautela_handlers.rs) ---
+        .route("/cautela", get(cautela_handlers::cautela_login_page))
+        .route("/cautela/login", post(cautela_handlers::cautela_login_handler))
+        .route("/cautela/logout", get(cautela_handlers::cautela_logout_handler))
+        .route("/cautela/dashboard", get(cautela_handlers::cautela_dashboard_handler))
+        
+        // Suas novas rotas do catálogo e ações
+        .route("/cautela/catalogo", get(cautela_handlers::cautela_catalogo_page))
+        .route("/cautela/catalogo/add-item", post(cautela_handlers::cautela_add_item_handler))
+        .route("/cautela/catalogo/add-exemplar", post(cautela_handlers::cautela_add_exemplar_handler))
+        .route("/cautela/catalogo/delete-exemplar", post(cautela_handlers::cautela_delete_exemplar_handler))
+        .route("/cautela/atrasos", get(cautela_handlers::cautela_atrasos_page))
+        
+        // Rotas de ações de empréstimo que já existiam
+        .route("/cautela/emprestar", post(cautela_handlers::cautela_emprestar_handler))
+        .route("/cautela/devolver", post(cautela_handlers::cautela_devolver_handler))
+        .route("/cautela/renovar", post(cautela_handlers::cautela_renovar_handler))
+
+
+        .route("/teste-json", get(cautela_handlers::teste_json_handler))
+
         .with_state(app_state)
         .layer(CookieManagerLayer::new());
     
     //172.20.10.3
 
-    let addr = SocketAddr::from(([172, 20, 10, 3], 3000));
+    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     println!("✅ Servidor a escutar em http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
