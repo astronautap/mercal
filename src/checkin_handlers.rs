@@ -1,13 +1,10 @@
 // src/checkin_handlers.rs
 
-//! # Handlers para o Check-in de Refeições
-//!
-//! Este módulo contém os handlers HTTP e WebSocket para a funcionalidade
-//! de conferência de presença nas refeições em tempo real.
-
 use crate::auth::{self, AppState, User};
 use crate::checkin::{CheckinAction, CheckinState, CheckinUpdate};
 use crate::meals::{self};
+// ADICIONADO: Importar o novo módulo de views
+use crate::views::checkin as view;
 use axum::{
     debug_handler,
     extract::{
@@ -15,7 +12,7 @@ use axum::{
         Query, State,
     },
     http::{header, StatusCode},
-    response::{Html, IntoResponse},
+    response::IntoResponse,
 };
 use chrono::Local;
 use futures_util::{stream::StreamExt, SinkExt};
@@ -25,29 +22,29 @@ use tokio::sync::mpsc;
 use tower_cookies::Cookies;
 use uuid::Uuid;
 
-/// Helper para obter o nome do usuário logado a partir dos cookies.
 fn get_current_user_name(state: &AppState, cookies: &Cookies) -> String {
-    let user_id = cookies.get("user_id").map_or("Desconhecido".to_string(), |c| c.value().to_string());
+    let user_id = cookies
+        .get("user_id")
+        .map_or("Desconhecido".to_string(), |c| c.value().to_string());
     let users = state.users.lock().unwrap();
-    users.get(&user_id)
-        .map_or(user_id, |u| u.name.clone())
+    users.get(&user_id).map_or(user_id, |u| u.name.clone())
 }
 
-/// Apresenta a página de check-in de refeições com UI melhorada.
 #[debug_handler]
 pub async fn checkin_page(
     State(state): State<AppState>,
     cookies: Cookies,
 ) -> impl IntoResponse {
-    // --- CORRIGIDO: Adicionado .await e acento em "conferência" ---
-    if !auth::has_role(&state, &cookies, "rancheiro").await && !auth::has_role(&state, &cookies, "conferência").await {
+    if !auth::has_role(&state, &cookies, "rancheiro").await
+        && !auth::has_role(&state, &cookies, "conferência").await
+    {
         return (StatusCode::FORBIDDEN, "Acesso negado.").into_response();
     }
 
     let today = Local::now().date_naive();
     let daily_data = match meals::load_daily_meals(today).await {
         Ok(data) => data,
-        Err(_) => return Html("<h1>Não foi possível carregar os dados das refeições para hoje.</h1><p>Verifique se o período de interesse foi aberto pelo rancheiro.</p><a href='/dashboard'>Voltar</a>").into_response(),
+        Err(_) => return view::checkin_page(today, String::new(), String::new()).into_response(),
     };
     
     let all_users = state.users.lock().unwrap().clone();
@@ -139,146 +136,10 @@ pub async fn checkin_page(
         ));
     }
     
-    Html(format!(r##"
-        <!DOCTYPE html>
-        <html lang="pt-BR">
-        <head>
-            <title>Check-in de Refeições</title>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <style>
-                :root {{ --primary-color: #007bff; --secondary-color: #6c757d; --success-color: #28a745; --light-gray: #f8f9fa; --border-color: #dee2e6; }}
-                body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; margin: 0; background-color: #f4f7f9; color: #333; }}
-                .container {{ max-width: 1200px; margin: 0 auto; padding: 20px; }}
-                .header-bar {{ background-color: white; padding: 15px 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); position: sticky; top: 0; z-index: 1000; }}
-                .header-content {{ display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; }}
-                h1 {{ margin: 0; font-size: 24px; }}
-                .search-bar {{ padding: 10px; font-size: 16px; border: 1px solid var(--border-color); border-radius: 6px; width: 100%; max-width: 400px; }}
-                .tab-container {{ display: flex; border-bottom: 1px solid var(--border-color); background-color: var(--light-gray); }}
-                .tablink {{ background-color: transparent; flex: 1; border: none; outline: none; cursor: pointer; padding: 14px 16px; transition: all 0.3s; font-size: 16px; font-weight: 500; border-bottom: 3px solid transparent; }}
-                .tablink:hover {{ background-color: #e9ecef; }}
-                .tablink.active {{ border-bottom-color: var(--primary-color); color: var(--primary-color); }}
-                .tabcontent {{ display: none; padding: 20px; background-color: white; }}
-                .tab-header {{ display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; margin-bottom: 20px; }}
-                .tab-header h2 {{ margin: 0; font-size: 20px; }}
-                .header-actions {{ display: flex; align-items: center; gap: 15px; }}
-                .counter {{ font-size: 16px; font-weight: 500; background-color: var(--light-gray); padding: 5px 10px; border-radius: 6px; }}
-                .report-btn {{ background-color: var(--primary-color); color: white; text-decoration: none; padding: 8px 12px; border-radius: 5px; font-size: 14px; font-weight: 500; }}
-                .turma-header {{ color: var(--primary-color); margin-top: 20px; margin-bottom: 10px; border-bottom: 1px solid var(--border-color); padding-bottom: 5px; }}
-                .user-list {{ list-style-type: none; padding: 0; }}
-                .user-item {{ display: flex; justify-content: space-between; align-items: center; padding: 15px; border-bottom: 1px solid #f0f0f0; transition: background-color 0.2s; }}
-                .user-item:last-child {{ border-bottom: none; }}
-                .user-info {{ font-size: 16px; }}
-                .status-display {{ display: flex; align-items: center; gap: 10px; }}
-                .checkin-btn {{ padding: 8px 16px; cursor: pointer; background-color: var(--success-color); color: white; border: none; border-radius: 5px; font-weight: 500; }}
-                .checkin-btn:disabled {{ background-color: var(--secondary-color); cursor: not-allowed; }}
-                .marker-info {{ font-size: 12px; color: #555; }}
-                .user-item.presente {{ background-color: #d4edda; color: #155724; }}
-                .user-item.presente .user-info {{ text-decoration: line-through; }}
-                .dashboard-link {{ display: inline-block; margin-top: 20px; color: var(--primary-color); text-decoration: none; font-weight: 500; }}
-            </style>
-        </head>
-        <body>
-            <div class="header-bar">
-                <div class="container">
-                    <div class="header-content">
-                        <h1>Check-in de Refeições ({})</h1>
-                        <input type="text" id="searchInput" class="search-bar" onkeyup="filterUsers()" placeholder="Pesquisar por número ou nome...">
-                    </div>
-                </div>
-                <div class="tab-container">{}</div>
-            </div>
-            <div class="container">
-                {}
-                <a href="/dashboard" class="dashboard-link">← Voltar ao Dashboard</a>
-            </div>
-
-            <script>
-                // O JavaScript não precisa de alterações
-                function openMeal(evt, mealName) {{
-                    document.querySelectorAll(".tabcontent").forEach(tc => tc.style.display = "none");
-                    document.querySelectorAll(".tablink").forEach(tl => tl.classList.remove("active"));
-                    document.getElementById(mealName).style.display = "block";
-                    evt.currentTarget.classList.add("active");
-                    filterUsers();
-                }}
-
-                function filterUsers() {{
-                    const input = document.getElementById("searchInput");
-                    const filter = input.value.toLowerCase();
-                    const activeTab = document.querySelector(".tabcontent[style*='block']");
-                    if (!activeTab) return;
-
-                    const items = activeTab.querySelectorAll(".user-item");
-                    items.forEach(item => {{
-                        const searchTerm = item.getAttribute('data-search-term');
-                        if (searchTerm.includes(filter)) {{
-                            item.style.display = "flex";
-                        }} else {{
-                            item.style.display = "none";
-                        }}
-                    }});
-                }}
-
-                const ws = new WebSocket(`ws://${{window.location.host}}/ws/refeicoes/checkin`);
-                ws.onopen = () => console.log("WebSocket conectado.");
-                ws.onmessage = function(event) {{
-                    try {{
-                        const update = JSON.parse(event.data);
-                        const userRow = document.querySelector(`#${{update.meal}} .user-item[data-search-term*='${{update.user_id.toLowerCase()}}']`);
-                        if (userRow && !userRow.classList.contains('presente')) {{
-                            userRow.classList.add("presente");
-                            const button = userRow.querySelector("button");
-                            if (button) {{
-                                button.disabled = true;
-                            }}
-                            
-                            let statusDisplay = userRow.querySelector(".status-display");
-                            if(statusDisplay){{
-                                let markerSpan = statusDisplay.querySelector(".marker-info");
-                                if(!markerSpan) {{
-                                    markerSpan = document.createElement("span");
-                                    markerSpan.className = "marker-info";
-                                    statusDisplay.appendChild(markerSpan);
-                                }}
-                                markerSpan.textContent = `por ${{update.marked_by}} às ${{update.marked_at}}`;
-                            }}
-
-                            updateCounter(update.meal);
-                        }}
-                    }} catch (e) {{
-                        console.error("Erro ao processar mensagem do servidor:", e);
-                    }}
-                }};
-
-                function markPresent(userId, meal) {{
-                    const action = {{ user_id: userId, meal: meal }};
-                    ws.send(JSON.stringify(action));
-                }}
-                
-                function updateCounter(meal) {{
-                    const counterElement = document.getElementById(`counter-${{meal}}`);
-                    if (!counterElement) return;
-                    
-                    let parts = counterElement.textContent.split('/');
-                    let present = parseInt(parts[0].split(':')[1].trim(), 10);
-                    let total = parseInt(parts[1].trim(), 10);
-                    
-                    present++;
-                    counterElement.textContent = `Presentes: ${{present}} / ${{total}}`;
-                }}
-
-                document.addEventListener("DOMContentLoaded", () => {{
-                    const firstTab = document.querySelector(".tablink");
-                    if (firstTab) {{
-                        firstTab.click();
-                    }}
-                }});
-            </script>
-        </body>
-        </html>
-    "##, today.format("%d/%m/%Y"), tab_buttons, tab_content)).into_response()
+    view::checkin_page(today, tab_buttons, tab_content).into_response()
 }
+
+// ... (o resto do ficheiro, incluindo generate_absent_report_handler e a lógica de WebSocket, permanece inalterado)
 
 #[derive(Deserialize)]
 pub struct ReportParams {
@@ -347,8 +208,6 @@ pub async fn generate_absent_report_handler(
     (headers, report).into_response()
 }
 
-
-/// Gere a conexão WebSocket para o check-in em tempo real.
 #[debug_handler]
 pub async fn checkin_websocket_handler(
     State(state): State<AppState>,
@@ -359,7 +218,6 @@ pub async fn checkin_websocket_handler(
     ws.on_upgrade(move |socket| handle_socket(socket, state.checkin_state, operator_name))
 }
 
-/// Função auxiliar para gerir o ciclo de vida de uma conexão WebSocket.
 async fn handle_socket(socket: WebSocket, state: CheckinState, operator_name: String) {
     let (mut sender, mut receiver) = socket.split();
     

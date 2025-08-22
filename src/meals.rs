@@ -12,9 +12,18 @@ const STATE_FILE: &str = "data/refeicoes/estado.json";
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct PeriodInfo {
+    pub struct PeriodInfo {
     pub start_date: NaiveDate,
     pub end_date: NaiveDate,
+}
+
+impl Default for PeriodInfo {
+    fn default() -> Self {
+        Self {
+            start_date: NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
+            end_date: NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

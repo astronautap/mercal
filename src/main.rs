@@ -17,6 +17,7 @@ mod escala_pdf;
 mod escala_admin_handlers; 
 mod cautela;
 mod cautela_handlers;
+mod views;
 
 use axum::{
     routing::{get, post},
@@ -145,6 +146,7 @@ async fn main() {
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     println!("✅ Servidor a escutar em http://{}", addr);
 
+    // MUDANÇA: Lógica de inicialização do servidor atualizada para Axum 0.8+
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app.into_make_service()).await.unwrap();
 }

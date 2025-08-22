@@ -21,7 +21,7 @@ impl PresenceSocketState {
             conns_map.values().cloned().collect()
         }; 
 
-        let message = Message::Text(update_message);
+        let message = Message::Text(update_message.into());
 
         for tx in connections_to_notify {
             let _ = tx.send(message.clone()).await;

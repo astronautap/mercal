@@ -50,6 +50,15 @@ pub enum TipoEvento {
     Devolucao,
 }
 
+pub struct AtrasoInfo {
+    pub nome_aluno: String,
+    pub id_aluno: String,
+    pub nome_item: String,
+    pub exemplar_id: String,
+    pub data_devolucao: NaiveDate,
+    pub dias_atrasado: i64,
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct EventoEmprestimo {
     pub tipo: TipoEvento,

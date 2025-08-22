@@ -29,7 +29,7 @@ impl CheckinState {
             conns_map.values().cloned().collect()
         }; // O bloqueio é liberado aqui
 
-        let message = Message::Text(update_message);
+        let message = Message::Text(update_message.into());
 
         // 2. Itera sobre os clones e envia as mensagens de forma segura.
         for tx in connections_to_notify {
